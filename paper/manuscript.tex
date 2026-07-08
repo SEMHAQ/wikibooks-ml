@@ -23,7 +23,7 @@
 \Title{Wikibooks-ML: A Multilingual Benchmark for Curriculum--Content Matching with Curriculum-Aware Contrastive Learning}
 
 \newcommand{\orcidauthorA}{0000-0000-0000-000X}
-\newcommand{\orcidauthorB}{0000-0000-0000-000X}
+\newcommand{\orcidauthorB}{0009-0008-9824-1801}
 
 \Author{Donghai Peng $^{1}$ and Huanjie Yu $^{2,}$*\orcidB{}}
 
@@ -70,7 +70,7 @@ Contrastive learning has become a dominant paradigm for learning representations
 
 \subsection{Curriculum and Educational Content Recommendation}
 
-The task of aligning educational content to curricula has gained attention with the growth of open educational resources. The Learning Equality Curriculum Recommendations challenge~\cite{lecr-kaggle} formalized the problem of recommending content items to curriculum topics across 28 languages, with leading solutions~\cite{habel2023} employing contrastive InfoNCE training with sentence-transformer encoders and dynamic hard-negative mining. Xu et al.~\cite{xu2024curriculum} proposed a transformer-base model with InfoNCE loss and a language-switching strategy to mitigate translation noise, reporting an F2 score of 0.663 on the same benchmark. Beyond curriculum matching, contrastive learning has been applied to multilingual job recommendation~\cite{deniz2024multilingual} and skill-taxonomy alignment, and curriculum-guided contrastive learning~\cite{cgcl2024} has been shown to benefit low-resource cross-lingual transfer in NER. These works establish contrastive learning as an effective framework for educational and multilingual recommendation, yet they rely on proprietary or competition-specific data and offer limited analysis of how curriculum structure informs negative sampling.
+The task of aligning educational content to curricula has gained attention with the growth of open educational resources. The Learning Equality Curriculum Recommendations challenge~\cite{lecr-kaggle} formalized the problem of recommending content items to curriculum topics across 28 languages, with leading solutions~\cite{habel2023} employing contrastive InfoNCE training with sentence-transformer encoders and dynamic hard-negative mining. Xu et al.~\cite{xu2024curriculum} proposed a transformer-base model with InfoNCE loss and a language-switching strategy to mitigate translation noise, reporting an F2 score of 0.663 on the same benchmark. Beyond curriculum matching, contrastive learning has been applied to multilingual job recommendation~\cite{deniz2024multilingual} and skill-taxonomy alignment. These works establish contrastive learning as an effective framework for educational and multilingual recommendation, yet they rely on proprietary or competition-specific data and offer limited analysis of how curriculum structure informs negative sampling.
 
 \subsection{Hard-Negative Mining}
 
@@ -230,7 +230,7 @@ We split topics stratified by language into 80\% train (39,999 topics) and 20\% 
 
 \subsection{Zero-Shot Baselines}
 
-Table~\ref{tab:zeroshot} reports retrieval performance without any fine-tuning. Notably, a non-neural title-overlap baseline achieves a higher F2 than both transformer models, yet both transformers obtain substantially higher MRR. This discrepancy motivates the analysis in Section~\ref{sec:discussion}.
+Without fine-tuning, the dual-encoder models already rank correct content highly but fail to clear the dynamic-threshold criterion, producing a regime in which a simple lexical baseline outscores them on F2 despite lower ranking quality. Table~\ref{tab:zeroshot} reports the details: the neural encoders achieve MRR of 0.662--0.669, whereas the non-neural title-overlap baseline cannot be ranked meaningfully; yet on the threshold-sensitive F2 the lexical baseline leads (0.539 vs.\ 0.317--0.362). This threshold-induced discrepancy motivates the evaluation analysis in Section~\ref{sec:discussion}.
 
 \begin{table}[H]
 \caption{Zero-shot retrieval performance on the held-out validation set. F2 uses a dynamic threshold; MRR and Recall@$k$ are threshold-free.\label{tab:zeroshot}}
@@ -271,7 +271,7 @@ Figure~\ref{fig:curve} and Table~\ref{tab:finetune} show that fine-tuning raises
 \begin{figure}[H]
 \centering
 \includegraphics[width=10 cm]{Definitions/fig_curve}
-\caption{Validation F2 during contrastive fine-tuning. Dynamic mining activates at epoch 5 (dashed line).\label{fig:curve}}
+\caption{Validation F2 during contrastive fine-tuning. Curriculum-aware negatives (both H-InfoNCE variants) accelerate convergence during the warm-up phase (epochs 1--4), whereas dynamic mining drives the epoch-5 jump; the two mechanisms converge at epoch 10.\label{fig:curve}}
 \end{figure}
 
 \begin{table}[H]
@@ -296,7 +296,7 @@ The dynamic threshold depends on a margin hyperparameter. Sweeping it at inferen
 \begin{figure}[H]
 \centering
 \includegraphics[width=10 cm]{Definitions/fig_margin}
-\caption{Effect of the margin threshold on F2, precision, and recall.\label{fig:margin}}
+\caption{Effect of the margin threshold on F2, precision, and recall. F2 peaks at margin 0.10 (0.675), exceeding the default 0.16; precision falls monotonically while recall rises, confirming a precision--recall trade-off.\label{fig:margin}}
 \end{figure}
 
 \begin{table}[H]
@@ -316,7 +316,7 @@ The dynamic threshold depends on a margin hyperparameter. Sweeping it at inferen
 
 \subsection{Per-Language Analysis}
 
-Breaking down performance by language (Figure~\ref{fig:radar}) reveals a counter-intuitive pattern: German achieves the highest F2 (0.914) while English, despite being the largest partition, achieves the lowest (0.340). Manual inspection shows that English failure cases are dominated by ``list-style'' topics (e.g., keyword references, award lists) whose ground-truth content items are individually short and lexically dissimilar to the topic title. The per-topic F2 distribution (Figure~\ref{fig:f2dist}) is strongly bimodal: 50.3\% of topics achieve F2$\geq$0.9 while 12.3\% fail completely (F2=0).
+Performance varies sharply across languages in a pattern that contradicts the usual data-volume intuition: German achieves the highest F2 (0.914) while English, the largest partition, achieves the lowest (0.340) (Figure~\ref{fig:radar}). Manual inspection attributes the English deficit to ``list-style'' topics (e.g., keyword references, award lists) with many ground-truth items; we quantify this mechanism in the next subsection. Consistent with this heterogeneity, the per-topic F2 distribution is strongly bimodal (Figure~\ref{fig:f2dist}): 50.3\% of topics achieve F2$\geq$0.9 while 12.3\% fail completely (F2=0).
 
 \begin{figure}[H]
 \centering
@@ -470,17 +470,8 @@ Xu, X.; Yang, B.; Ma, L.; Wang, H. Curriculum recommendations using transformer 
 \bibitem{deniz2024multilingual}
 Deniz, D.; Celik, E.; Ozturk, S.; Karakoyun, F. Combined unsupervised and contrastive learning for multilingual job recommendation. In Proceedings of the RecSysHR Workshop, CEUR-WS, 2024; Vol.\ 3788.
 
-\bibitem{cgcl2024}
-Lai, Y.; Lin, Z.; Yang, J.; Liu, B. Curriculum-guided curriculum learning: A new paradigm. In Proceedings of the IJCAI Workshop on Deep Learning, 2024.
-
 \bibitem{kolibri}
 Learning Equality. Kolibri: Open educational platform for offline-first learning. Available online: \url{https://learningequality.org/} (accessed on 1 July 2026).
-
-\bibitem{wikibooks}
-Wikimedia Foundation. Wikibooks: Free textbooks and manuals. Available online: \url{https://www.wikibooks.org/} (accessed on 1 July 2026).
-
-\bibitem{reimers2019sbert_survey}
-Reimers, N.; Gurevych, I. Making monolingual sentence embeddings multilingual using knowledge distillation. In Proceedings of the EMNLP, 2020; pp.\ 4512--4525.
 
 \end{thebibliography}
 

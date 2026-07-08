@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+data/
+*.pth
+*.xml.bz2
+*.npy
+checkpoints/
+experiments/
+venv/
+*.log

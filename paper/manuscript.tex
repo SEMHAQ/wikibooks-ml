@@ -74,13 +74,40 @@ The task of aligning educational content to curricula has gained attention with 
 
 Hard-negative mining is central to effective contrastive learning. DPR~\cite{karpukhin2020dpr} uses BM25 to retrieve hard negatives, while ANCE~\cite{xiong2020ance} updates the negative pool asynchronously with the improving retriever. Robinson et al.~\cite{robinson2021hard} formalized importance sampling for hard negatives, weighting examples by their similarity to the query. In the curriculum-matching setting, Habel~\cite{habel2023} introduced an error-driven mining scheme that periodically re-scores the training set to surface the model's false positives as in-batch negatives. A limitation of this approach is the warm-up period required before meaningful negatives can be mined, as well as the computational cost of periodic full-set re-scoring. Our work shows that the native hierarchy of textbook curricula provides an immediate, structure-aware source of hard negatives---sibling topics---that can be injected from the first epoch without any model inference, complementing dynamic mining in the later stages of training.
 
-\section{Materials and Methods}
+\section{Materials and Methods}\label{sec:method}
 
 \subsection{The Wikibooks-ML Dataset}
 
 Wikibooks is a Wikimedia project hosting collaboratively written open-content textbooks organized hierarchically as book $\rightarrow$ chapter $\rightarrow$ section. We downloaded the official XML dumps (June 2026) for six language editions and parsed them with a streaming XML processor. Each main-namespace page is cleaned of wiki markup and retained if its cleaned text exceeds 50 characters.
 
-The dataset is constructed by treating each page's parent path as a \emph{curriculum topic} and the page itself as a \emph{content item}, yielding a topic--content alignment from the native hierarchy. Table~\ref{tab:dataset} summarizes the result. The data are released under the CC BY-SA / GFDL licenses of the source project.
+The dataset is constructed by treating each page's parent path as a \emph{curriculum topic} and the page itself as a \emph{content item}, yielding a topic--content alignment from the native hierarchy. Table~\ref{tab:dataset} summarizes the result. The data are released under the CC BY-SA / GFDL licenses of the source project. Figure~\ref{fig:pipeline} shows the construction pipeline.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  every node/.style={font=\footnotesize},
+  node distance=0.5cm,
+  stage/.style={rectangle,draw,rounded corners,minimum width=2.3cm,minimum height=0.9cm,align=center,fill=blue!8},
+  arr/.style={-Stealth, thick}
+]
+\node[stage] (xml) {Wikibooks\\XML dump};
+\node[stage, right=of xml] (parse) {Stream\\XML parser};
+\node[stage, right=of parse] (clean) {Markup\\cleaning};
+\node[stage, right=of clean] (split) {Hierarchy\\split};
+\node[stage, right=of split, fill=green!15] (out) {topics.csv\\content.csv\\correlations.csv};
+\draw[arr] (xml) -- (parse);
+\draw[arr] (parse) -- (clean);
+\draw[arr] (clean) -- (split);
+\draw[arr] (split) -- (out);
+
+% Annotations below
+\node[below=0.15cm of parse, font=\scriptsize, gray] {6 languages};
+\node[below=0.15cm of clean, font=\scriptsize, gray] {wiki $\to$ text};
+\node[below=0.15cm of split, font=\scriptsize, gray] {parent $\to$ topic};
+\node[below=0.15cm of out, font=\scriptsize, gray] {50K / 211K / 50K};
+\end{tikzpicture}
+\caption{Wikibooks-ML construction pipeline. Each language edition's XML dump is parsed, cleaned of wiki markup, and split by page hierarchy: the parent path becomes a curriculum topic and the page itself a content item, with the parent--child relation yielding the alignment.\label{fig:pipeline}}
+\end{figure}
 
 \begin{table}[H]
 \caption{Statistics of the Wikibooks-ML benchmark.\label{tab:dataset}}
@@ -108,7 +135,39 @@ We encode topics and content with a shared multilingual transformer encoder $f_\
 \mathcal{L} = -\frac{1}{2}\sum_{i=1}^{N}\left[\log\frac{e^{s(t_i,c_i)/\tau}}{\sum_{j} e^{s(t_i,c_j)/\tau}} + \log\frac{e^{s(c_i,t_i)/\tau}}{\sum_{j} e^{s(c_i,t_j)/\tau}}\right],
 \end{equation}
 \end{linenomath}
-where $s(\cdot,\cdot)$ is cosine similarity and $\tau$ is a learned temperature. All other content items in the batch serve as in-batch negatives. We use \texttt{paraphrase-multilingual-mpnet-base-v2} (278M parameters)~\cite{mpnet} as the encoder with CLS pooling, trained in mixed precision for 10 epochs with a batch size of 256 and gradient accumulation of 2.
+where $s(\cdot,\cdot)$ is cosine similarity and $\tau$ is a learned temperature. All other content items in the batch serve as in-batch negatives. We use \texttt{paraphrase-multilingual-mpnet-base-v2} (278M parameters)~\cite{mpnet} as the encoder with CLS pooling, trained in mixed precision for 10 epochs with a batch size of 256 and gradient accumulation of 2. Figure~\ref{fig:framework} illustrates the dual-encoder architecture.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  every node/.style={font=\footnotesize},
+  enc/.style={rectangle,draw,rounded corners,minimum width=2.2cm,minimum height=1.2cm,fill=blue!10,align=center},
+  inp/.style={rectangle,draw,minimum width=1.8cm,minimum height=0.5cm,fill=gray!10},
+  vec/.style={circle,draw,minimum size=0.8cm,fill=green!15},
+  sim/.style={rectangle,draw,rounded corners,minimum width=2.4cm,minimum height=0.9cm,fill=yellow!20,align=center},
+  loss/.style={rectangle,draw,rounded corners,minimum width=1.8cm,minimum height=0.9cm,fill=red!10,align=center},
+  arr/.style={-Stealth}
+]
+\node[inp] (tin) {Topic text};
+\node[inp, below=2.0cm of tin] (cin) {Content text};
+\node[enc, right=0.6cm of tin] (tenc) {Transformer\\$f_\theta$};
+\node[enc, right=0.6cm of cin] (cenc) {Transformer\\$f_\theta$};
+\node[vec, right=0.5cm of tenc] (tvec) {$\mathbf{t}$};
+\node[vec, right=0.5cm of cenc] (cvec) {$\mathbf{c}$};
+\node[sim, right=1.0cm of tvec, yshift=-1.0cm] (sim) {cosine sim\\$s(\mathbf{t},\mathbf{c})$};
+\node[loss, right=0.7cm of sim] (loss) {InfoNCE\\loss};
+
+\draw[arr] (tin) -- (tenc);
+\draw[arr] (tenc) -- (tvec);
+\draw[arr] (cin) -- (cenc);
+\draw[arr] (cenc) -- (cvec);
+\draw[arr] (tvec) -- (sim);
+\draw[arr] (cvec) -- (sim);
+\draw[arr] (sim) -- (loss);
+\draw[<->, dashed] (tenc.south) -- node[right,font=\scriptsize]{shared} (cenc.north);
+\end{tikzpicture}
+\caption{Dual-encoder contrastive architecture. Topic and content texts are encoded by a shared multilingual transformer; their CLS embeddings are compared by cosine similarity and optimized with a symmetric InfoNCE loss over in-batch negatives.\label{fig:framework}}
+\end{figure}
 
 \subsection{H-InfoNCE: Curriculum-Aware Hard Negative Mining}
 
@@ -165,7 +224,7 @@ We observe that the Wikibooks topic tree provides \emph{free} hard negatives: si
 
 We split topics stratified by language into 80\% train (39,999 topics) and 20\% validation (9,999 topics), ensuring held-out topics never appear in training. Retrieval is performed within each language to mirror real deployment where users search in their own language. We report the F2 score used by~\cite{lecr-kaggle} with a dynamic threshold ($\text{max sim} - 0.16 \cdot \text{max sim}$), and additionally report Mean Reciprocal Rank (MRR) and Recall@$k$ to decouple ranking quality from the threshold-sensitive F2.
 
-\section{Results}
+\section{Results}\label{sec:results}
 
 \subsection{Zero-Shot Baselines}
 
@@ -300,9 +359,13 @@ Fine-tuned & 0.183 & 0.133 & 0.051 \\
 
 \textbf{Limitations.} The Wikibooks hierarchy yields same-language ground truth by construction, so cross-lingual F2 is near zero; we therefore analyze cross-lingual behavior through embedding geometry rather than retrieval accuracy. Constructing parallel cross-lingual ground truth---e.g., aligning translated editions of the same textbook---is a promising direction. Additionally, the median content-per-topic is low (1), reflecting the sparse nature of textbook hierarchies, and LaBSE training exhibited instability that warrants further investigation of learning-rate schedules for high-capacity encoders.
 
-\section{Conclusions}
+\section{Conclusions}\label{sec:conclusion}
 
-We introduced Wikibooks-ML, an open six-language benchmark for curriculum--content matching, and studied contrastive learning on it through the lens of curriculum structure. Fine-tuning a multilingual sentence transformer with InfoNCE achieves an F2 of 0.670 on a strict holdout, and our curriculum-aware H-InfoNCE variant accelerates convergence. The analysis surfaces a threshold-induced bias in the standard F2 metric and quantifies how fine-tuning reshapes cross-lingual embedding geometry. The released dataset and code provide a reproducible foundation for equitable educational recommendation research.
+We introduced Wikibooks-ML, an open six-language benchmark for curriculum--content matching derived entirely from Wikibooks, and studied contrastive learning on it through the lens of curriculum structure. Fine-tuning a multilingual sentence transformer with InfoNCE raises the F2 score from 0.362 (zero-shot) to 0.680 on a strict 20\% holdout, approaching the performance reported on the proprietary Learning Equality benchmark, and our curriculum-aware H-InfoNCE variant accelerates early convergence by injecting sibling-based hard negatives from the first epoch.
+
+Beyond the headline numbers, our systematic analysis yields three broader findings. First, the standard F2 score combined with a dynamic threshold harbors a bias that favors lexical methods over neural rankers; we recommend complementing it with threshold-free metrics such as MRR and Recall@$k$, and we show that the margin hyperparameter itself admits a +0.006 F2 gain when tuned. Second, the relative contributions of curriculum-aware and error-driven negative mining are complementary rather than substitutive---the former solves the cold-start problem of contrastive training, while the latter provides precise late-stage discrimination---suggesting that hierarchical structure is a generally useful source of free supervision in retrieval tasks over organized corpora. Third, per-language performance is governed more by topic structure (e.g., list-style nodes with many short, lexically dissimilar items) than by training-data volume, a finding that informs where future retrieval systems should focus effort.
+
+These findings come with limitations. The Wikibooks hierarchy yields same-language ground truth by construction, so we analyzed cross-lingual behavior through embedding geometry rather than retrieval accuracy; constructing parallel cross-lingual ground truth---for instance, by aligning translated editions of the same textbook---is a natural next step. The benchmark could also be extended to additional, lower-resource languages and to non-textual content modalities. We release the dataset, training code, and full experimental configuration to support reproducible research on equitable, multilingual educational recommendation.
 
 \vspace{6pt}
 
@@ -310,7 +373,7 @@ We introduced Wikibooks-ML, an open six-language benchmark for curriculum--conte
 
 \funding{This research was funded by the Guangdong Province Undergraduate Teaching Quality and Teaching Reform Project (grant no. Yue-Jiao-Gao-Han [2024] No. 30), the Guangdong Provincial Department of Education Provincial First-class Undergraduate Course (grant no. Yue-Jiao-Gao-Han [2023] No. 33), and the Shaoguan University Institutional Quality Engineering Project (grant no. Shao-Yuan-Jiao [2023] No. 30).}
 
-\dataavailability{The Wikibooks-ML dataset and code are available at \url{[repository URL to be added upon acceptance]}. The raw data are derived from Wikibooks XML dumps available at \url{https://dumps.wikimedia.org/}.}
+\dataavailability{The Wikibooks-ML dataset construction pipeline, training code (InfoNCE and H-InfoNCE), analysis scripts, and the full experimental configuration are publicly available at \url{https://github.com/SEMHAQ/wikibooks-ml} (archived upon acceptance). The raw data are derived from Wikibooks XML dumps available at \url{https://dumps.wikimedia.org/}.}
 
 \acknowledgments{The authors thank the Wikibooks contributor community and the maintainers of the open-source retrieval framework that informed our implementation~\cite{habel2023}.}
 
